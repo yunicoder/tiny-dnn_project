@@ -16,4 +16,8 @@ std::string data_path = "C:\\Users\\tkmpa\\workdir\\Github\\tiny-dnn\\data";  //
 ```
 
 4. ƒrƒ‹ƒh&Às
+```
+$ cd source
+$ make
+```
 
