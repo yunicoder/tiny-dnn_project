@@ -1,4 +1,5 @@
 #include <tiny_dnn/tiny_dnn.h>
+
 #include "network.h"
 
 void construct_net(tiny_dnn::network<tiny_dnn::sequential>& nn,
@@ -113,10 +114,24 @@ void train_lenet(const std::string& data_dir_path,
     auto on_enumerate_epoch = [&]() {
         std::cout << "Epoch " << epoch << "/" << n_train_epochs << " finished. "
             << t.elapsed() << "s elapsed." << std::endl;
-        ++epoch;
-        tiny_dnn::result res = nn.test(test_images, test_labels);
-        std::cout << res.num_success << "/" << res.num_total << std::endl;
 
+        // loss‚ÌŒvZ
+        std::cout << "calculate loss..." << std::endl;
+        auto train_loss = nn.get_loss<tiny_dnn::mse>(train_images, train_labels);
+        auto test_loss = nn.get_loss<tiny_dnn::mse>(test_images, test_labels);
+
+        // accuracy‚ÌŒvZ
+        std::cout << "calculate accuracy..." << std::endl;
+        tiny_dnn::result train_results = nn.test(train_images, train_labels);
+        tiny_dnn::result test_results = nn.test(test_images, test_labels);
+        float_t train_accuracy = (float_t)train_results.num_success * 100 / train_results.num_total;
+        float_t test_accuracy = (float_t)test_results.num_success * 100 / test_results.num_total;
+
+        std::cout << "train loss: " << train_loss << " test loss: " << test_loss << std::endl;
+        std::cout << "train accuracy: " << train_accuracy << "% test accuracy: " << test_accuracy << "%" << std::endl;
+
+
+        ++epoch;
         disp.restart(train_images.size());
         t.restart();
     };
@@ -133,5 +148,5 @@ void train_lenet(const std::string& data_dir_path,
     // test and show results
     nn.test(test_images, test_labels).print_detail(std::cout);
     // save network model & trained weights
-    nn.save("LeNet-model");
+    nn.save("models/LeNet-model");
 }
