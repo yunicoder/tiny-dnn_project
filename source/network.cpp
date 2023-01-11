@@ -1,6 +1,11 @@
 #include <tiny_dnn/tiny_dnn.h>
-
 #include "network.h"
+#include <iostream>     //標準入出力
+#include <sys/socket.h> //アドレスドメイン
+#include <sys/types.h>  //ソケットタイプ
+#include <arpa/inet.h>  //バイトオーダの変換に利用
+#include <unistd.h>     //close()に利用
+#include <string>       //string型
 
 void construct_net(tiny_dnn::network<tiny_dnn::sequential>& nn,
     tiny_dnn::core::backend_t backend_type) {
@@ -92,7 +97,7 @@ void train_lenet(const std::string& data_dir_path,
     std::cout << "all train size:" << mnist_all_train_labels.size() << ", all test size: " << mnist_all_test_labels.size() << std::endl;
 
     // slice to number that require current training
-    int train_num = 1000;  // ����g�p����摜����
+    int train_num = 1000;  // ����g�p����摜����
     std::vector<tiny_dnn::label_t> train_labels = slice(mnist_all_train_labels, 1, train_num);
     std::vector<tiny_dnn::label_t> test_labels = slice(mnist_all_test_labels, 1, train_num);
     std::vector<tiny_dnn::vec_t> train_images = slice(mnist_all_train_images, 1, train_num);
@@ -109,18 +114,37 @@ void train_lenet(const std::string& data_dir_path,
         std::min(tiny_dnn::float_t(4),
             static_cast<tiny_dnn::float_t>(sqrt(n_minibatch) * learning_rate));
 
+
+    // ソケットの生成
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0); // アドレスドメイン, ソケットタイプ, プロトコル
+    if (sockfd < 0)
+    { // エラー処理
+
+        std::cout << "Error socket:" << std::strerror(errno); // 標準出力
+        exit(1);                                              // 異常終了
+    }
+
+    // アドレスの生成
+    struct sockaddr_in addr;                       // 接続先の情報用の構造体(ipv4)
+    memset(&addr, 0, sizeof(struct sockaddr_in));  // memsetで初期化
+    addr.sin_family = AF_INET;                     // アドレスファミリ(ipv4)
+    addr.sin_port = htons(8080);                   // ポート番号,htons()関数は16bitホストバイトオーダーをネットワークバイトオーダーに変換
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // IPアドレス,inet_addr()関数はアドレスの翻訳
+
+    
+
     int epoch = 1;
     // create callback
     auto on_enumerate_epoch = [&]() {
         std::cout << "Epoch " << epoch << "/" << n_train_epochs << " finished. "
             << t.elapsed() << "s elapsed." << std::endl;
 
-        // loss�̌v�Z
+        // loss�̌v�Z
         std::cout << "calculate loss..." << std::endl;
         auto train_loss = nn.get_loss<tiny_dnn::mse>(train_images, train_labels);
         auto test_loss = nn.get_loss<tiny_dnn::mse>(test_images, test_labels);
 
-        // accuracy�̌v�Z
+        // accuracy�̌v�Z
         std::cout << "calculate accuracy..." << std::endl;
         tiny_dnn::result train_results = nn.test(train_images, train_labels);
         tiny_dnn::result test_results = nn.test(test_images, test_labels);
@@ -129,6 +153,20 @@ void train_lenet(const std::string& data_dir_path,
 
         std::cout << "train loss: " << train_loss << " test loss: " << test_loss << std::endl;
         std::cout << "train accuracy: " << train_accuracy << "% test accuracy: " << test_accuracy << "%" << std::endl;
+
+        // ソケット接続要求
+        connect(sockfd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)); // ソケット, アドレスポインタ, アドレスサイズ
+
+        // データ送信 (train_loss,test_loss,train_accuracy,test_accuracy を送る)
+        auto send_str = std::to_string(train_loss) + "," + std::to_string(test_loss);  // loss
+        send_str += "," + std::to_string(train_accuracy) + "," + std::to_string(test_accuracy);  // accuracy
+        char* send_char = const_cast<char*>(send_str.c_str());
+        send(sockfd, send_char, 40, 0);   // 送信
+        std::cout << send_char << std::endl;
+
+        // recieve
+        char r_str[1024];                // 受信データ格納用
+        recv(sockfd, r_str, 1024, 0);    // 受信
 
 
         ++epoch;
@@ -144,6 +182,9 @@ void train_lenet(const std::string& data_dir_path,
         on_enumerate_epoch);
 
     std::cout << "end training." << std::endl;
+
+    // close socket
+    close(sockfd);
 
     // test and show results
     nn.test(test_images, test_labels).print_detail(std::cout);
